@@ -104,6 +104,7 @@ struct r600_shader {
 	struct r600_shader_array * arrays;
 
 	boolean			uses_doubles;
+	boolean			uses_images;
 };
 
 union r600_shader_key {
