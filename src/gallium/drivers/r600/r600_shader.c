@@ -194,6 +194,8 @@ int r600_pipe_shader_create(struct pipe_context *ctx,
 	/* disable SB for shaders using doubles */
 	use_sb &= !shader->shader.uses_doubles;
 
+	use_sb &= !shader->shader.uses_images;
+
 	/* Check if the bytecode has already been built. */
 	if (!shader->shader.bc.bytecode) {
 		r = r600_bytecode_build(&shader->shader.bc);
