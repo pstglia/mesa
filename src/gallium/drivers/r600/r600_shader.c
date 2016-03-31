@@ -969,6 +969,7 @@ static int tgsi_declaration(struct r600_shader_ctx *ctx)
 	case TGSI_FILE_SAMPLER:
 	case TGSI_FILE_SAMPLER_VIEW:
 	case TGSI_FILE_ADDRESS:
+	case TGSI_FILE_IMAGE:
 		break;
 
 	case TGSI_FILE_SYSTEM_VALUE:
