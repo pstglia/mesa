@@ -7739,6 +7739,135 @@ static int tgsi_tex(struct r600_shader_ctx *ctx)
 	return 0;
 }
 
+/* this fixes up 1D arrays properly */
+static int load_index_src(struct r600_shader_ctx *ctx, int src_index, int *idx_gpr)
+{
+	struct tgsi_full_instruction *inst = &ctx->parse.FullToken.FullInstruction;
+	int r, i;
+	struct r600_bytecode_alu alu;
+	int temp_reg = r600_get_temp(ctx);
+
+	for (i = 0; i < 4; i++) {
+		bool def_val = true, write_zero = false;
+		memset(&alu, 0, sizeof(struct r600_bytecode_alu));
+		alu.op = ALU_OP1_MOV;
+		alu.dst.sel = temp_reg;
+		alu.dst.chan = i;
+
+		switch (inst->Memory.Texture) {
+		case TGSI_TEXTURE_BUFFER:
+		case TGSI_TEXTURE_1D:
+			if (i == 1 || i == 2 || i == 3) {
+				write_zero = true;
+			}
+			break;
+		case TGSI_TEXTURE_1D_ARRAY:
+			if (i == 1 || i == 3)
+				write_zero = true;
+			else if (i == 2) {
+				r600_bytecode_src(&alu.src[0], &ctx->src[src_index], 1);
+				def_val = false;
+			}
+			break;
+		case TGSI_TEXTURE_2D:
+			if (i == 2 || i == 3)
+				write_zero = true;
+			break;
+		default:
+			if (i == 3)
+				write_zero = true;
+			break;
+		}
+
+		if (write_zero) {
+			alu.src[0].sel = V_SQ_ALU_SRC_LITERAL;
+			alu.src[0].value = 0;
+		} else if (def_val) {
+			r600_bytecode_src(&alu.src[0], &ctx->src[src_index], i);
+		}
+
+		if (i == 3)
+			alu.last = 1;
+		alu.dst.write = 1;
+		r = r600_bytecode_add_alu(ctx->bc, &alu);
+		if (r)
+			return r;
+	}
+	*idx_gpr = temp_reg;
+	return 0;
+}
+
+static int tgsi_load(struct r600_shader_ctx *ctx)
+{
+	struct tgsi_full_instruction *inst = &ctx->parse.FullToken.FullInstruction;
+	/* have to work out the offset into the RAT immediate return buffer */
+	struct r600_bytecode_vtx vtx;
+	struct r600_bytecode_cf *cf;
+	int r;
+	int idx_gpr;
+	unsigned format, num_format, format_comp, endian;
+	const struct util_format_description *desc;
+	unsigned rat_index_mode;
+
+	rat_index_mode = inst->Src[0].Indirect.Index == 2 ? 2 : 0; // CF_INDEX_1 : CF_INDEX_NONE
+
+	r = load_index_src(ctx, 1, &idx_gpr);
+	if (r)
+		return r;
+
+	if (rat_index_mode)
+		egcm_load_index_reg(ctx->bc, 1, false);
+
+	r600_bytecode_add_cfinst(ctx->bc, CF_OP_MEM_RAT);
+	cf = ctx->bc->cf_last;
+
+	cf->rat.id = ctx->shader->rat_base + inst->Src[0].Register.Index;
+	cf->rat.inst = V_RAT_INST_NOP_RTN;
+	cf->rat.index_mode = rat_index_mode;
+	cf->output.type = V_SQ_CF_ALLOC_EXPORT_WORD0_SQ_EXPORT_READ_IND;
+	cf->output.gpr = ctx->thread_id_gpr;
+	cf->output.index_gpr = idx_gpr;
+	cf->output.comp_mask = 0xf;
+	cf->output.burst_count = 1;
+	cf->vpm = 1;
+	cf->barrier = 1;
+	cf->mark = 1;
+	cf->output.elem_size = 0;
+
+	r600_bytecode_add_cfinst(ctx->bc, CF_OP_WAIT_ACK);
+	cf = ctx->bc->cf_last;
+	cf->barrier = 1;
+
+	desc = util_format_description(inst->Memory.Format);
+	r600_vertex_data_type(inst->Memory.Format,
+			      &format, &num_format, &format_comp, &endian);
+	memset(&vtx, 0, sizeof(struct r600_bytecode_vtx));
+	vtx.op = FETCH_OP_VFETCH;
+	vtx.buffer_id = R600_IMAGE_IMMED_RESOURCE_OFFSET + inst->Src[0].Register.Index;
+	vtx.buffer_index_mode = rat_index_mode;
+	vtx.fetch_type = SQ_VTX_FETCH_NO_INDEX_OFFSET;
+	vtx.src_gpr = ctx->thread_id_gpr;
+	vtx.src_sel_x = 1;
+	vtx.dst_gpr = ctx->file_offset[inst->Dst[0].Register.File] + inst->Dst[0].Register.Index;
+	vtx.dst_sel_x = desc->swizzle[0];
+	vtx.dst_sel_y = desc->swizzle[1];
+	vtx.dst_sel_z = desc->swizzle[2];
+	vtx.dst_sel_w = desc->swizzle[3];
+	vtx.srf_mode_all = 1;
+	vtx.data_format = format;
+	vtx.num_format_all = num_format;
+	vtx.format_comp_all = format_comp;
+	vtx.endian = endian;
+	vtx.offset = 0;
+	vtx.mega_fetch_count = 3;
+	r = r600_bytecode_add_vtx_tc(ctx->bc, &vtx);
+	if (r)
+		return r;
+	cf = ctx->bc->cf_last;
+	cf->barrier = 1;
+	return 0;
+}
+
 static int tgsi_lrp(struct r600_shader_ctx *ctx)
 {
 	struct tgsi_full_instruction *inst = &ctx->parse.FullToken.FullInstruction;
@@ -9308,7 +9437,7 @@ static const struct r600_shader_tgsi_instruction r600_shader_tgsi_instruction[] 
 	[TGSI_OPCODE_UCMP]	= { ALU_OP0_NOP, tgsi_ucmp},
 	[TGSI_OPCODE_IABS]	= { 0, tgsi_iabs},
 	[TGSI_OPCODE_ISSG]	= { 0, tgsi_issg},
-	[TGSI_OPCODE_LOAD]	= { ALU_OP0_NOP, tgsi_unsupported},
+	[TGSI_OPCODE_LOAD]	= { ALU_OP0_NOP, tgsi_load},
 	[TGSI_OPCODE_STORE]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_MFENCE]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_LFENCE]	= { ALU_OP0_NOP, tgsi_unsupported},
@@ -9506,7 +9635,7 @@ static const struct r600_shader_tgsi_instruction eg_shader_tgsi_instruction[] = 
 	[TGSI_OPCODE_UCMP]	= { ALU_OP0_NOP, tgsi_ucmp},
 	[TGSI_OPCODE_IABS]	= { 0, tgsi_iabs},
 	[TGSI_OPCODE_ISSG]	= { 0, tgsi_issg},
-	[TGSI_OPCODE_LOAD]	= { ALU_OP0_NOP, tgsi_unsupported},
+	[TGSI_OPCODE_LOAD]	= { ALU_OP0_NOP, tgsi_load},
 	[TGSI_OPCODE_STORE]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_MFENCE]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_LFENCE]	= { ALU_OP0_NOP, tgsi_unsupported},
