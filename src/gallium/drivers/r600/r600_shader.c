@@ -3044,6 +3044,7 @@ static int r600_shader_from_tgsi(struct r600_context *rctx,
 		break;
 	case PIPE_SHADER_FRAGMENT:
 		shader->two_side = key.ps.color_two_side;
+		shader->rat_base = key.ps.nr_cbufs;
 		break;
 	default:
 		break;

@@ -105,6 +105,7 @@ struct r600_shader {
 
 	boolean			uses_doubles;
 	boolean			uses_images;
+	uint8_t			rat_base;
 };
 
 union r600_shader_key {
