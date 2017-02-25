@@ -8034,6 +8034,68 @@ static int tgsi_atomic_op(struct r600_shader_ctx *ctx)
 	return 0;
 }
 
+static int tgsi_resq(struct r600_shader_ctx *ctx)
+{
+	struct tgsi_full_instruction *inst = &ctx->parse.FullToken.FullInstruction;
+	unsigned sampler_index_mode;
+	struct r600_bytecode_tex tex;
+	int r;
+	boolean has_txq_cube_array_z = false;
+
+	if (inst->Memory.Texture == TGSI_TEXTURE_CUBE_ARRAY &&
+	    inst->Dst[0].Register.WriteMask & 4) {
+		ctx->shader->has_txq_cube_array_z_comp = true;
+		has_txq_cube_array_z = true;
+	}
+
+	sampler_index_mode = inst->Src[0].Indirect.Index == 2 ? 2 : 0; // CF_INDEX_1 : CF_INDEX_NONE
+	if (sampler_index_mode)
+		egcm_load_index_reg(ctx->bc, 1, false);
+
+
+	/* does this shader want a num layers from TXQ for a cube array? */
+	if (has_txq_cube_array_z) {
+		int id = tgsi_tex_get_src_gpr(ctx, 0);
+		struct r600_bytecode_alu alu;
+
+		memset(&alu, 0, sizeof(struct r600_bytecode_alu));
+		alu.op = ALU_OP1_MOV;
+
+		alu.src[0].sel = R600_SHADER_BUFFER_INFO_SEL;
+		/* channel 1 or 3 of each word */
+		alu.src[0].sel += (id / 2);
+		alu.src[0].chan = ((id % 2) * 2) + 1;
+		alu.src[0].kc_bank = R600_BUFFER_INFO_CONST_BUFFER;
+		tgsi_dst(ctx, &inst->Dst[0], 2, &alu.dst);
+		alu.last = 1;
+		r = r600_bytecode_add_alu(ctx->bc, &alu);
+		if (r)
+			return r;
+		/* disable writemask from texture instruction */
+		inst->Dst[0].Register.WriteMask &= ~4;
+	}
+	memset(&tex, 0, sizeof(struct r600_bytecode_tex));
+	tex.op = ctx->inst_info->op;
+	tex.sampler_id = R600_IMAGE_REAL_RESOURCE_OFFSET + inst->Src[0].Register.Index;
+	tex.sampler_index_mode = sampler_index_mode;
+	tex.resource_id = tex.sampler_id;
+	tex.resource_index_mode = sampler_index_mode;
+	tex.src_sel_x = 4;
+	tex.src_sel_y = 4;
+	tex.src_sel_z = 4;
+	tex.src_sel_w = 4;
+	tex.dst_sel_x = (inst->Dst[0].Register.WriteMask & 1) ? 0 : 7;
+	tex.dst_sel_y = (inst->Dst[0].Register.WriteMask & 2) ? 1 : 7;
+	tex.dst_sel_z = (inst->Dst[0].Register.WriteMask & 4) ? 2 : 7;
+	tex.dst_sel_w = (inst->Dst[0].Register.WriteMask & 8) ? 3 : 7;
+	tex.dst_gpr = ctx->file_offset[inst->Dst[0].Register.File] + inst->Dst[0].Register.Index;
+	r = r600_bytecode_add_tex(ctx->bc, &tex);
+	if (r)
+		return r;
+
+	return 0;
+}
+
 static int tgsi_lrp(struct r600_shader_ctx *ctx)
 {
 	struct tgsi_full_instruction *inst = &ctx->parse.FullToken.FullInstruction;
@@ -9745,7 +9807,7 @@ static const struct r600_shader_tgsi_instruction eg_shader_tgsi_instruction[] = 
 	[TGSI_OPCODE_ENDSUB]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_TXQ_LZ]	= { FETCH_OP_GET_TEXTURE_RESINFO, tgsi_tex},
 	[TGSI_OPCODE_TXQS]	= { FETCH_OP_GET_NUMBER_OF_SAMPLES, tgsi_tex},
-	[TGSI_OPCODE_RESQ]	= { ALU_OP0_NOP, tgsi_unsupported},
+	[TGSI_OPCODE_RESQ]     	= { FETCH_OP_GET_TEXTURE_RESINFO, tgsi_resq},
 	[106]			= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_NOP]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_FSEQ]	= { ALU_OP2_SETE_DX10, tgsi_op2},
@@ -9968,7 +10030,7 @@ static const struct r600_shader_tgsi_instruction cm_shader_tgsi_instruction[] = 
 	[TGSI_OPCODE_ENDSUB]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_TXQ_LZ]	= { FETCH_OP_GET_TEXTURE_RESINFO, tgsi_tex},
 	[TGSI_OPCODE_TXQS]	= { FETCH_OP_GET_NUMBER_OF_SAMPLES, tgsi_tex},
-	[TGSI_OPCODE_RESQ]	= { ALU_OP0_NOP, tgsi_unsupported},
+	[TGSI_OPCODE_RESQ]     	= { FETCH_OP_GET_TEXTURE_RESINFO, tgsi_resq},
 	[106]			= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_NOP]	= { ALU_OP0_NOP, tgsi_unsupported},
 	[TGSI_OPCODE_FSEQ]	= { ALU_OP2_SETE_DX10, tgsi_op2},
