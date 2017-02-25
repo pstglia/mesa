@@ -39,6 +39,14 @@
 
 #define R600_NUM_ATOMS 52
 
+/*
+ * ranges reserved for images on evergreen
+ * first set for the immediate buffers,
+ * second for the actual resources for RESQ.
+ */
+#define R600_IMAGE_IMMED_RESOURCE_OFFSET 160
+#define R600_IMAGE_REAL_RESOURCE_OFFSET 168
+
 /* read caches */
 #define R600_CONTEXT_INV_VERTEX_CACHE		(R600_CONTEXT_PRIVATE_FLAG << 0)
 #define R600_CONTEXT_INV_TEX_CACHE		(R600_CONTEXT_PRIVATE_FLAG << 1)
