@@ -213,6 +213,12 @@ struct r600_resource {
 	/* Whether the resource has been exported via resource_get_handle. */
 	bool				is_shared;
 	unsigned			external_usage; /* PIPE_HANDLE_USAGE_* */
+
+	/*
+	 * EG/Cayman only - for RAT operations hw need an immediate buffer
+	 * to store results in.
+	 */
+	struct r600_resource            *immed_buffer;
 };
 
 struct r600_transfer {
@@ -862,6 +868,10 @@ void r600_viewport_set_rast_deps(struct r600_common_context *rctx,
 void r600_update_vs_writes_viewport_index(struct r600_common_context *rctx,
 					  struct tgsi_shader_info *info);
 void r600_init_viewport_functions(struct r600_common_context *rctx);
+
+void eg_resource_alloc_immed(struct r600_common_screen *rscreen,
+			     struct r600_resource *res,
+			     unsigned immed_size);
 
 /* cayman_msaa.c */
 extern const uint32_t eg_sample_locs_2x[4];

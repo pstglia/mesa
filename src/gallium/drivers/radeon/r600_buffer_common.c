@@ -237,6 +237,7 @@ static void r600_buffer_destroy(struct pipe_screen *screen,
 	struct r600_resource *rbuffer = r600_resource(buf);
 
 	util_range_destroy(&rbuffer->valid_buffer_range);
+	pipe_resource_reference((struct pipe_resource**)&rbuffer->immed_buffer, NULL);
 	pb_reference(&rbuffer->buf, NULL);
 	FREE(rbuffer);
 }
@@ -526,6 +527,7 @@ r600_alloc_buffer_struct(struct pipe_screen *screen,
 	rbuffer->bind_history = 0;
 	rbuffer->TC_L2_dirty = false;
 	rbuffer->is_shared = false;
+	rbuffer->immed_buffer = NULL;
 	util_range_init(&rbuffer->valid_buffer_range);
 	return rbuffer;
 }

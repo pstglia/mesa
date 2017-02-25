@@ -564,6 +564,7 @@ static void r600_texture_destroy(struct pipe_screen *screen,
 	if (rtex->cmask_buffer != &rtex->resource) {
 	    r600_resource_reference(&rtex->cmask_buffer, NULL);
 	}
+	pipe_resource_reference((struct pipe_resource**)&resource->immed_buffer, NULL);
 	pb_reference(&resource->buf, NULL);
 	r600_resource_reference(&rtex->dcc_separate_buffer, NULL);
 	r600_resource_reference(&rtex->last_dcc_separate_buffer, NULL);
@@ -782,6 +783,15 @@ static void r600_texture_alloc_cmask_separate(struct r600_common_screen *rscreen
 		rtex->cb_color_info |= EG_S_028C70_FAST_CLEAR(1);
 
 	p_atomic_inc(&rscreen->compressed_colortex_counter);
+}
+
+void eg_resource_alloc_immed(struct r600_common_screen *rscreen,
+			     struct r600_resource *res,
+			     unsigned immed_size)
+{
+	res->immed_buffer = (struct r600_resource *)
+		pipe_buffer_create(&rscreen->b, PIPE_BIND_CUSTOM,
+				   PIPE_USAGE_DEFAULT, immed_size);
 }
 
 static void r600_texture_get_htile_size(struct r600_common_screen *rscreen,
