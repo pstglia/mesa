@@ -37,7 +37,9 @@
 
 #include "tgsi/tgsi_scan.h"
 
-#define R600_NUM_ATOMS 52
+#define R600_NUM_ATOMS 53
+
+#define R600_MAX_IMAGES 8
 
 /*
  * ranges reserved for images on evergreen
@@ -140,6 +142,7 @@ struct r600_cb_misc_state {
 	unsigned blend_colormask; /* 8*4 bits for 8 RGBA colorbuffers */
 	unsigned nr_cbufs;
 	unsigned nr_ps_color_outputs;
+	unsigned nr_rats;
 	bool multiwrite;
 	bool dual_src_blend;
 };
@@ -422,6 +425,29 @@ struct r600_shader_state {
 	struct r600_pipe_shader *shader;
 };
 
+struct r600_image_view {
+	struct r600_resource *buffer;
+	uint32_t cb_color_base;
+	uint32_t cb_color_pitch;
+	uint32_t cb_color_slice;
+	uint32_t cb_color_view;
+	uint32_t cb_color_info;
+	uint32_t cb_color_attrib;
+	uint32_t cb_color_dim;
+	uint32_t cb_color_fmask;
+	uint32_t cb_color_fmask_slice;
+	uint32_t immed_resource_words[8];
+	uint32_t resource_words[8];
+	bool skip_mip_address_reloc;
+};
+
+struct r600_image_state {
+	struct r600_atom atom;
+	uint32_t                        enabled_mask;
+	uint32_t                        dirty_mask;
+	struct r600_image_view views[R600_MAX_IMAGES];
+};
+
 struct r600_context {
 	struct r600_common_context	b;
 	struct r600_screen		*screen;
@@ -476,6 +502,8 @@ struct r600_context {
 	struct r600_config_state	config_state;
 	struct r600_stencil_ref_state	stencil_ref;
 	struct r600_vgt_state		vgt_state;
+	/* only have images on fragment shader */
+	struct r600_image_state         fragment_images;
 	/* Shaders and shader resources. */
 	struct r600_cso_state		vertex_fetch_shader;
 	struct r600_shader_state        hw_shader_stages[EG_NUM_HW_STAGES];
