@@ -574,7 +574,11 @@ static int r600_get_shader_param(struct pipe_screen* pscreen, unsigned shader, e
 	case PIPE_SHADER_CAP_TGSI_DROUND_SUPPORTED:
 	case PIPE_SHADER_CAP_TGSI_DFRACEXP_DLDEXP_SUPPORTED:
 	case PIPE_SHADER_CAP_MAX_SHADER_BUFFERS:
+		return 0;
 	case PIPE_SHADER_CAP_MAX_SHADER_IMAGES:
+		if (rscreen->b.family >= CHIP_CEDAR && shader == PIPE_SHADER_FRAGMENT)
+			return 8;
+		return 0;
 	case PIPE_SHADER_CAP_LOWER_IF_THRESHOLD:
 		return 0;
 	case PIPE_SHADER_CAP_MAX_UNROLL_ITERATIONS_HINT:
